@@ -1,4 +1,3 @@
-import sys
 from decisionmodels.D2RL.envs.nade import NADE
 from decisionmodels.D2RL.controller.treesearchnadecontroller import (
     TreeSearchNADEBackgroundController,
@@ -6,8 +5,10 @@ from decisionmodels.D2RL.controller.treesearchnadecontroller import (
 from decisionmodels.D2RL.controller.nadeglobalcontroller import NADEBVGlobalController
 from decisionmodels.D2RL.conf import conf
 from decisionmodels.D2RL.observesumo import NadeObserver
+import sys
 import random
 import utils.globalvalues as gv
+import utils.dyglobalvalues as dgv
 
 
 conf.experiment_config["mode"] = "D2RL"  # args.mode
@@ -51,19 +52,18 @@ def action_idx_to_action(idx):
 
 
 class D2RLDecisionModel:
-    def __init__(self, map, ego_id, main_id) -> None:
-        self._map = map
-        self._ego_id = ego_id
-        self._main_id = main_id
+    def __init__(self, ego_id, main_id) -> None:
+        self.ego_id = ego_id
+        self.main_id = main_id
 
     def single_decision(self, bv_pdf_dict, bv_action_idx_dict):
-        if self._ego_id == self._main_id:
-            self._ego_id == "0"
-        bv_pdf = bv_pdf_dict.get(self._ego_id)
+        if self.ego_id == self.main_id:
+            self.ego_id == "0"
+        bv_pdf = bv_pdf_dict.get(self.ego_id)
         if bv_pdf is None:
             return "MAINTAIN"
-        if bv_action_idx_dict.get(self._ego_id) != None:
-            return action_idx_to_action(bv_action_idx_dict.get(self._ego_id))
+        if bv_action_idx_dict.get(self.ego_id) != None:
+            return action_idx_to_action(bv_action_idx_dict.get(self.ego_id))
         else:
             random.seed(2024)
             return action_idx_to_action(
@@ -72,43 +72,42 @@ class D2RLDecisionModel:
 
 
 class D2RLGlobalDecisionModel:
-    def __init__(self, map, main_id) -> None:
-        self._env = NADE(
+    def __init__(self, main_id) -> None:
+        self.env = NADE(
             BVController=TreeSearchNADEBackgroundController,
             cav_model=conf.experiment_config["AV_model"],
         )
-        self._controller = NADEBVGlobalController(self._env)
-        self._map = map
-        self._main_id = main_id
+        self.controller = NADEBVGlobalController(self.env)
+        self.main_id = main_id
 
-    def global_decision(self, full_vehicle_id_dict, close_vehicle_id_list, time_step):
+    def global_decision(self, realvehicle_id_list, close_vehicle_id_list, time_step):
         """
         全局控制决策
         """
         obs_dict = {}
         for veh_id in close_vehicle_id_list:
-            vehicle = full_vehicle_id_dict.get(veh_id)
+            vehicle = dgv.get_realvehicle(veh_id)
             #
-            if vehicle._nade_observer == None:
-                vehicle._nade_observer = NadeObserver(veh_id, self._main_id, self._map)
+            if vehicle.nade_observer == None:
+                vehicle.nade_observer = NadeObserver(veh_id, self.main_id)
             # 前一次决策
             prev_lat = "central"
-            if vehicle._control_action == "SLIDE_LEFT":
+            if vehicle.control_action == "SLIDE_LEFT":
                 prev_lat = "left"
-            if vehicle._control_action == "SLIDE_RIGHT":
+            if vehicle.control_action == "SLIDE_RIGHT":
                 prev_lat = "right"
             prev_lon = (
-                gv.LON_ACC_DICT.get(vehicle._control_action)
-                if type(vehicle._control_action) == str
-                else vehicle._control_action
+                gv.LON_ACC_DICT.get(vehicle.control_action)
+                if type(vehicle.control_action) == str
+                else vehicle.control_action
             )
-            if veh_id == self._main_id:
-                obs_dict["0"] = vehicle._nade_observer.get_nade_observe(
-                    full_vehicle_id_dict, prev_lon, prev_lat
+            if veh_id == self.main_id:
+                obs_dict["0"] = vehicle.nade_observer.get_nade_observe(
+                    realvehicle_id_list, prev_lon, prev_lat
                 )
             else:
-                obs_dict[veh_id] = vehicle._nade_observer.get_nade_observe(
-                    full_vehicle_id_dict, prev_lon, prev_lat
+                obs_dict[veh_id] = vehicle.nade_observer.get_nade_observe(
+                    realvehicle_id_list, prev_lon, prev_lat
                 )
         (
             bv_pdf_dict,
@@ -121,7 +120,7 @@ class D2RLGlobalDecisionModel:
             controlled_bvs_list,
             vehicle_criticality_list,
             discriminator_input,
-        ) = self._controller.select_controlled_bv_and_action_exp(
+        ) = self.controller.select_controlled_bv_and_action_exp(
             "0", obs_dict, time_step
         )
         bv_action_idx_dict = dict(list(zip(controlled_bvs_id_list, bv_action_idx_list)))
