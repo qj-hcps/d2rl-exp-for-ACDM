@@ -14,11 +14,11 @@ class NadeObserver(Observer):
 
     def get_nade_observe(self, realvehicle_id_list, prev_long=0.0, prev_lat="central"):
         """
-        获取nade输入所需的OBS格式, 被测车辆
+        Get the OBS format required for the nade input, for the tested vehicle
         """
-        # 将被测车辆的id改成"0", 格式需要
+        # Change the id of the tested vehicle to "0", format requirement
         dgv.update_realvehicle_dict("0", dgv.pop_realvehicle(self.main_id))
-        # 每辆车的观测dict
+        # Observation dict for each vehicle
         single_obs = {
             "Ego": None,
             "Lead": None,
@@ -29,13 +29,13 @@ class NadeObserver(Observer):
             "RightFoll": None,
         }
 
-        # 观测自身的数据
+        # Observation data for self
         single_obs_ego = {
             "veh_id": None,
             "could_drive_adjacent_lane_left": False,
             "could_drive_adjacent_lane_right": False,
             "distance": 0.0,
-            "heading": 90.0,  # 向前就是90
+            "heading": 90.0,  # Forward is 90
             "lane_index": 0,
             "lateral_speed": 0.0,
             "lateral_offset": 0.0,
@@ -50,14 +50,14 @@ class NadeObserver(Observer):
             "acceleration": 0.0,
         }
 
-        # 每辆车生成一个观测值
+        # Generate an observation for each vehicle
         obs = single_obs.copy()
         obs["Ego"] = single_obs_ego.copy()
         # veh_id
         if self.ego_id == self.main_id:
             self.ego_id = "0"
         obs["Ego"]["veh_id"] = self.ego_id
-        # 根据车道判断是否可变道
+        # Determine if lane change is possible based on lane
         vehicle = dgv.get_realvehicle(self.ego_id)
         lane_id = dgv.get_map().get_waypoint(vehicle.vehicle.get_location()).lane_id
         if lane_id == gv.LANE_ID["Left"]:
@@ -68,12 +68,12 @@ class NadeObserver(Observer):
             obs["Ego"]["could_drive_adjacent_lane_left"] = True
             obs["Ego"]["lane_index"] = 0
             obs["Ego"]["position"][1] = obs["Ego"]["position3D"][1] = 42.0
-        # 计算偏移距离
+        # Calculate offset distance
         lc_rate = vehicle.changing_lane_pace / max(len(vehicle.lane_changing_route), 1)
         obs["Ego"]["lateral_offset"] = min(
             lc_rate * gv.LANE_WIDTH, (1 - lc_rate) * gv.LANE_WIDTH
         )
-        # 计算偏航角和横向绝对位置
+        # Calculate heading angle and lateral absolute position
         degree = math.atan(gv.LANE_WIDTH / vehicle.scalar_velocity) * (180 / math.pi)
         if vehicle.control_action == "SLIDE_LEFT":
             obs["Ego"]["heading"] = 90 + degree
@@ -88,11 +88,11 @@ class NadeObserver(Observer):
                 46.0 - lc_rate * gv.LANE_WIDTH
             )
 
-        # 上一次决策
+        # Previous decision
         obs["Ego"]["prev_action"]["lateral"] = prev_lat
         obs["Ego"]["prev_action"]["longitudinal"] = prev_long
 
-        # 计算纵向位置（假设主车固定在200）
+        # Calculate longitudinal position (assuming main vehicle fixed at 200)
         main_long_pos = 200
         rel_dist = emath.cal_distance_along_road(
             dgv.get_map().get_waypoint(dgv.get_realvehicle("0").vehicle.get_location()),
@@ -101,15 +101,15 @@ class NadeObserver(Observer):
         obs["Ego"]["position"][0] = obs["Ego"]["position3D"][0] = (
             rel_dist + main_long_pos
         )
-        # 速度
+        # Speed
         obs["Ego"]["velocity"] = vehicle.scalar_velocity
-        # 加速度
+        # Acceleration
         obs["Ego"]["acceleration"] = (
             gv.LON_ACC_DICT.get(vehicle.control_action)
             if type(vehicle.control_action) == str
             else vehicle.control_action
         )
-        # 其他方位的车辆
+        # Other directional vehicles
         (
             min_id_front,
             _,
@@ -120,7 +120,7 @@ class NadeObserver(Observer):
             min_id_sideb,
             _,
         ) = self.get_closest_vehicles(realvehicle_id_list)
-        # 各个方位的观测
+        # Observations for each direction
         if min_id_front:
             obs["Lead"] = self.get_other_obs(min_id_front)
         if min_id_back:
@@ -138,10 +138,10 @@ class NadeObserver(Observer):
 
     def get_other_obs(self, veh_id):
         """
-        获取单个观测的单个其他车辆
+        Get a single observation of another vehicle
         """
         vehicle = dgv.get_realvehicle(veh_id)
-        # 观测其他车辆的数据
+        # Observation data for other vehicles
         single_obs_other = {
             "veh_id": veh_id,
             "distance": 0.0,
@@ -152,7 +152,7 @@ class NadeObserver(Observer):
             "position3D": [0.0, 0.0, 0.0],
             "acceleration": 0.0,
         }
-        # 距离
+        # Distance
         rel_long_dist = emath.cal_distance_along_road(
             dgv.get_map().get_waypoint(
                 dgv.get_realvehicle(self.ego_id).vehicle.get_location()
@@ -160,7 +160,7 @@ class NadeObserver(Observer):
             dgv.get_map().get_waypoint(vehicle.vehicle.get_location()),
         )
         single_obs_other["distance"] = math.sqrt(rel_long_dist**2 + gv.LANE_WIDTH**2)
-        # 速度
+        # Speed
         single_obs_other["velocity"] = vehicle.scalar_velocity
         # lane id
         lane_id = dgv.get_map().get_waypoint(vehicle.vehicle.get_location()).lane_id
@@ -170,7 +170,7 @@ class NadeObserver(Observer):
         if lane_id == gv.LANE_ID["Right"]:
             single_obs_other["lane_index"] = 0
             single_obs_other["position"][1] = single_obs_other["position3D"][1] = 42.0
-        # 计算纵向位置（假设主车固定在200）
+        # Calculate longitudinal position (assuming main vehicle fixed at 200)
         main_long_pos = 200
         rel_dist = emath.cal_distance_along_road(
             dgv.get_map().get_waypoint(dgv.get_realvehicle("0").vehicle.get_location()),
@@ -179,7 +179,7 @@ class NadeObserver(Observer):
         single_obs_other["position"][0] = single_obs_other["position3D"][0] = (
             rel_dist + main_long_pos
         )
-        # 偏航角和横向绝对位置
+        # Heading and lateral absolute position
         lc_rate = vehicle.changing_lane_pace / max(len(vehicle.lane_changing_route), 1)
         degree = math.atan(gv.LANE_WIDTH / vehicle.scalar_velocity) * (180 / math.pi)
         if vehicle.control_action == "SLIDE_LEFT":
@@ -192,7 +192,7 @@ class NadeObserver(Observer):
             single_obs_other["position"][1] = single_obs_other["position3D"][1] = (
                 46.0 - lc_rate * gv.LANE_WIDTH
             )
-        # 加速度
+        # Acceleration
         single_obs_other["acceleration"] = (
             gv.LON_ACC_DICT.get(vehicle.control_action)
             if type(vehicle.control_action) == str
@@ -202,8 +202,8 @@ class NadeObserver(Observer):
 
     def get_closest_vehicles(self, realvehicle_id_list, mode="real"):
         """
-        筛选出主车前后侧方最近车辆
-        mode = real || virtual, 代表传入的字典是realvehicle还是virtualvehicle
+        Filter the closest vehicles on the front, back, and side of the main vehicle
+        mode = real || virtual, indicates whether the input dictionary is realvehicle or virtualvehicle
         """
         self.close_vehicle_id_list = self.get_close_vehicle_id_list(realvehicle_id_list)
         ego_vehicle = dgv.get_realvehicle(self.ego_id)
@@ -220,7 +220,7 @@ class NadeObserver(Observer):
             ego_wp = ego_vehicle.waypoint
         else:
             raise ValueError("The mode value is wrong!")
-        # 对每辆车判断是否处于同一车道且前后距离最短
+        # For each vehicle, determine if it is on the same lane and has the shortest front-back distance
         for rvid in self.close_vehicle_id_list:
             if rvid != self.ego_id:
                 vehicle = dgv.get_realvehicle(rvid)
@@ -232,24 +232,24 @@ class NadeObserver(Observer):
                     raise ValueError("The mode value is wrong!")
                 rel_distance = emath.cal_distance_along_road(ego_wp, veh_wp)
                 if veh_wp.lane_id == ego_wp.lane_id:
-                    # 前方车辆
+                    # Front vehicle
                     if 0 < rel_distance < min_dist_front:
                         min_dist_front = rel_distance
                         min_id_front = rvid
-                    # 后方车辆
+                    # Back vehicle
                     if min_dist_back < rel_distance < 0:
                         min_dist_back = rel_distance
                         min_id_back = rvid
                 if veh_wp.lane_id != ego_wp.lane_id:
-                    # 侧前方车辆
+                    # Front side vehicle
                     if 0 < rel_distance < min_dist_front:
                         min_dist_sidef = rel_distance
                         min_id_sidef = rvid
-                    # 侧后方车辆
+                    # Back side vehicle
                     if min_dist_sideb < rel_distance < 0:
                         min_dist_sideb = rel_distance
                         min_id_sideb = rvid
-        # 返回前方最近车辆与其相对距离
+        # Return the closest front vehicle and its relative distance
         return (
             min_id_front,
             min_dist_front,
